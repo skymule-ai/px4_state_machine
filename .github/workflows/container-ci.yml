@@ -9,6 +9,9 @@ jobs:
   container-build-test:
     name: Container CI (Humble)
     runs-on: ubuntu-22.04
+    defaults:
+      run:
+        shell: bash
     permissions:
       contents: read
       packages: read
