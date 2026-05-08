@@ -62,6 +62,10 @@ jobs:
         if: always()
         run: |
           source /opt/ros/humble/setup.bash
-          source /tmp/ws/install/setup.bash
+          if [ -f /tmp/ws/install/setup.bash ]; then
+            source /tmp/ws/install/setup.bash
+          else
+            echo "Workspace setup not found at /tmp/ws/install/setup.bash; reporting available test results without sourcing the install space."
+          fi
           cd /tmp/ws
           colcon test-result --verbose
