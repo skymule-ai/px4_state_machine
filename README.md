@@ -1,64 +1,63 @@
-# PX4 State Machine Workspace
+# px4_state_machine
 
-This workspace contains a ROS 2 package that implements a state machine for controlling a PX4 drone. The state machine is designed to manage the drone's flight states, including taking off, holding position, and landing safely upon shutdown.
+ROS 2 package for PX4 offboard control and fleet TF broadcasting.
 
-## Project Structure
+## What is in this package
 
-```
-px4_state_machine_ws
-├── src
-│   └── px4_state_machine
-│       ├── include
-│       │   └── px4_state_machine
-│       │       ├── drone_state_machine.hpp
-│       │       └── px4_interface.hpp
-│       ├── src
-│       │   ├── drone_state_machine.cpp
-│       │   ├── px4_interface.cpp
-│       │   └── main.cpp
-│       ├── launch
-│       │   └── px4_state_machine.launch.py
-│       ├── config
-│       │   └── params.yaml
-│       ├── CMakeLists.txt
-│       ├── package.xml
-│       └── README.md
-└── README.md
-```
+- `scripts/vtol_offboard.py`: VTOL offboard state machine node.
+- `scripts/quad_offboard.py`: multicopter (X500-style) offboard state machine node.
+- `scripts/lawnmower_offboard.py`: lawnmower/rover-style offboard hold node.
+- `scripts/fleet_tf_broadcaster_node.py`: fleet-level `map -> odom_i` and `odom_i -> base_link_i` TF broadcaster.
+- `launch/vtol_state_machine.launch.py`: launch VTOL controllers for one or more PX4 instances.
+- `launch/quad_state_machine.launch.py`: launch multicopter controllers for one or more PX4 instances.
+- `launch/lawnmower_offboard.launch.py`: launch lawnmower controllers for one or more PX4 instances.
+- `launch/fleet_tf_broadcaster.launch.py`: launch fleet TF broadcaster, with optional RViz.
 
-## Setup Instructions
+## Build
 
-1. **Clone the Repository**: Clone this repository to your local machine.
+From workspace root (`ws`):
 
-2. **Install Dependencies**: Make sure you have ROS 2 installed along with any necessary dependencies for the PX4 autopilot.
-
-3. **Build the Package**:
-   Navigate to the workspace directory and run the following commands:
-   ```bash
-   colcon build
-   ```
-
-4. **Source the Setup File**:
-   After building, source the setup file to overlay this workspace on top of your current environment:
-   ```bash
-   source install/setup.bash
-   ```
-
-## Usage
-
-To run the state machine, use the provided launch file:
 ```bash
-ros2 launch px4_state_machine px4_state_machine.launch.py
+colcon build --packages-up-to px4_state_machine
+source install/setup.bash
 ```
 
-For the Python offboard VTOL node details (topics, commands, parameters, examples), see `README_offboard.md`.
+## Launch examples
 
-## Features
+VTOL controllers:
 
-- **Takeoff**: The drone can take off to a specified altitude.
-- **Hold Mode**: The drone can maintain its position and altitude.
-- **Landing**: The drone will land safely when commanded or upon shutdown.
+```bash
+ros2 launch px4_state_machine vtol_state_machine.launch.py px4_instances:=1,2
+```
 
-## Additional Information
+Multicopter controllers:
 
-Refer to the individual README files in the `src/px4_state_machine` directory for more detailed documentation on the implementation and usage of the classes and methods within the package.
+```bash
+ros2 launch px4_state_machine quad_state_machine.launch.py px4_instances:=1,2
+```
+
+Lawnmower controllers:
+
+```bash
+ros2 launch px4_state_machine lawnmower_offboard.launch.py px4_instances:=4,5,6
+```
+
+Fleet TF broadcaster (RViz enabled by default):
+
+```bash
+ros2 launch px4_state_machine fleet_tf_broadcaster.launch.py
+```
+
+Fleet TF broadcaster without RViz:
+
+```bash
+ros2 launch px4_state_machine fleet_tf_broadcaster.launch.py use_rviz:=false
+```
+
+## Config notes
+
+- Per-instance offboard config files are supported via `*_params_<instance>.yaml` with fallback to `*_params_default.yaml` in `config/`.
+- Fleet TF defaults are in `config/fleet_tf.yaml`.
+- RViz config used by fleet TF launch is `rviz/default.rviz`.
+
+For detailed topic/parameter behavior of the offboard nodes, see `README_offboard.md`.
