@@ -1,0 +1,16 @@
+/**:
+  ros__parameters:
+    topic_prefix: px4_
+    robot_ids: [1, 2]
+    anchor_robot_id: 1
+
+    map_frame: map
+    odom_frame_prefix: odom_
+    base_link_frame_prefix: base_link_
+
+    global_position_topic_name: /fmu/out/vehicle_global_position
+    odom_topic_name: /fmu/out/vehicle_odometry
+
+    init_sample_count: 20
+    max_eph: 10.0
+    publish_rate_hz: 30.0

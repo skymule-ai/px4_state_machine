@@ -1,0 +1,18 @@
+/**:
+  ros__parameters:
+    # instance must match the PX4 instance number declared in drones.yaml.
+    # fmu_prefix (/px4_N) and target_system (N+1) are derived automatically.
+    # NOTE: Handled in the launch file.
+    instance: 0
+
+    # Offboard stream / arm timing
+    setpoint_rate_hz: 20.0
+    offboard_warmup_cycles: 20
+    rearm_interval_s: 2.0
+
+    # Command override (Float32MultiArray on command_topic)
+    command_topic: "command"
+    cmd_timeout_s: 5.0
+    # Expected format: [vx, vy, yaw, omega] (m/s, m/s, rad, rad/s)
+    # Max speed clamp for sqrt(vx^2 + vy^2). If <= 0, no clamping.
+    max_speed_mps: 5.0

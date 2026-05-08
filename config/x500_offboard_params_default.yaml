@@ -1,0 +1,26 @@
+/**:
+  ros__parameters:
+    # instance must match the PX4 instance number declared in drones.yaml.
+    # fmu_prefix (/px4_N) and target_system (N+1) are derived automatically.
+    # NOTE: handled in the launch file.
+    instance: 0
+
+    # Offboard stream / arm timing
+    setpoint_rate_hz: 20.0
+    offboard_warmup_cycles: 20
+    rearm_interval_s: 2.0
+
+    # MC takeoff/hover
+    takeoff_height_m: 15.0
+    takeoff_reached_tol_m: 0.6
+    hover_yaw_rad: 0.0
+
+    # Command override (Float32MultiArray on command_topic)
+    # Compatibility format expected from ergodic interfaces: [vx, vy, 1]
+    command_topic: "command"
+    cmd_timeout_s: 3.0
+    command_speed_mps: 3.0
+    max_speed_mps: 5.0
+
+    # Landing request topic
+    land_topic: "land_request"
