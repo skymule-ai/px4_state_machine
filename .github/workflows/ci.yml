@@ -1,4 +1,4 @@
-name: px4_state_machine CI
+name: ROS2 CI
 
 on:
   pull_request:
