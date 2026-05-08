@@ -1,0 +1,53 @@
+name: px4_state_machine CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        ros_distro: [humble]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup ROS
+        uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: ${{ matrix.ros_distro }}
+
+      - name: Create workspace and fetch deps
+        run: |
+          mkdir -p ~/ws/src
+          ln -s "$GITHUB_WORKSPACE" ~/ws/src/px4_state_machine
+          git clone --depth 1 https://github.com/PX4/px4_msgs.git ~/ws/src/px4_msgs
+
+      - name: Install dependencies
+        run: |
+          cd ~/ws
+          rosdep update
+          rosdep install --from-paths src --ignore-src -r -y
+
+      - name: Python syntax checks
+        run: |
+          cd ~/ws/src/px4_state_machine
+          python3 -m py_compile scripts/*.py launch/*.py
+
+      - name: Build
+        run: |
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+          cd ~/ws
+          colcon build --event-handlers console_direct+ --packages-up-to px4_state_machine
+
+      - name: Test
+        run: |
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+          source ~/ws/install/setup.bash
+          cd ~/ws
+          colcon test --event-handlers console_direct+ --packages-select px4_state_machine
+          colcon test-result --verbose
