@@ -1,4 +1,4 @@
-name: px4_state_machine Container CI
+name: Mullet Container CI
 
 on:
   pull_request:
