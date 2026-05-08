@@ -53,4 +53,11 @@ jobs:
           source /tmp/ws/install/setup.bash
           cd /tmp/ws
           colcon test --event-handlers console_direct+ --packages-select px4_state_machine
+
+      - name: Test results
+        if: always()
+        run: |
+          source /opt/ros/humble/setup.bash
+          source /tmp/ws/install/setup.bash
+          cd /tmp/ws
           colcon test-result --verbose
