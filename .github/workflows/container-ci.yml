@@ -15,6 +15,9 @@ jobs:
 
     container:
       image: ghcr.io/skymule-ai/px4-sitl:v1.16.1
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Checkout
