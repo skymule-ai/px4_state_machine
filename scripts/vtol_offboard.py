@@ -20,10 +20,12 @@ import math
 from enum import IntEnum
 
 import rclpy
+from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Empty, String, Float32MultiArray
 
+from px4_state_machine.action import FlightCommand
 from px4_msgs.msg import (
     AirspeedValidated,
     OffboardControlMode,
@@ -42,6 +44,7 @@ from px4_msgs.msg import (
 
 
 class FlightState(IntEnum):
+    IDLE = -1
     WARMUP_SETPOINTS = 0
     REQUEST_OFFBOARD_ARM = 1
     MC_TAKEOFF = 2
@@ -75,6 +78,9 @@ class VtolStateMachine(Node):
         # Topics
         self.command_topic = str(
             self.declare_parameter("command_topic", "command").value
+        )
+        self.takeoff_action_name = str(
+            self.declare_parameter("takeoff_action_name", "flight_command").value
         )
         self.request_fw_topic = str(
             self.declare_parameter("request_fw_topic", "request_fw").value
@@ -154,7 +160,7 @@ class VtolStateMachine(Node):
             )
 
         # ---- Internal state -----------------------------------------------
-        self.state = FlightState.WARMUP_SETPOINTS
+        self.state = FlightState.IDLE
         self.warmup_counter = 0
 
         # MC setpoint targets (NED: up = negative Z)
@@ -270,6 +276,17 @@ class VtolStateMachine(Node):
         self.create_subscription(Empty, self.request_mc_topic, self._req_mc_cb, 10)
         self.create_subscription(Empty, self.land_topic, self._land_cb, 10)
 
+        self.takeoff_action_server = ActionServer(
+            self,
+            FlightCommand,
+            self.takeoff_action_name,
+            execute_callback=self._execute_takeoff_goal,
+            goal_callback=self._takeoff_goal_cb,
+            cancel_callback=self._takeoff_cancel_cb,
+        )
+
+        # self._start_takeoff_sequence(source="startup")
+
         period_s = 1.0 / max(self.setpoint_rate_hz, 1.0)
         self.create_timer(period_s, self._timer_cb)
 
@@ -300,7 +317,8 @@ class VtolStateMachine(Node):
             f"cmd_vel_lookahead_s={self.cmd_vel_lookahead_s} | "
             f"debug_enabled={self.debug_enabled} "
             f"debug_topic='{self.debug_topic}' | "
-            f"command_topic='{self.command_topic}'"
+            f"command_topic='{self.command_topic}' "
+            f"takeoff_action_name='{self.takeoff_action_name}'"
         )
 
     # -----------------------------------------------------------------------
@@ -365,6 +383,54 @@ class VtolStateMachine(Node):
             return False
         timeout_us = int(max(self.cmd_timeout_s, 0.0) * 1e6)
         return (now_us - self.cmd_stamp_us) < timeout_us
+
+    def _start_takeoff_sequence(
+        self, altitude_m: float | None = None, source: str = ""
+    ) -> tuple[bool, str]:
+        if self.state in (
+            FlightState.ALIGN_YAW_FOR_FW,
+            FlightState.PRE_TRANSITION_ACCEL,
+            FlightState.AWAITING_FW_TRANSITION,
+            FlightState.FW_EXECUTE,
+            FlightState.REQUEST_VTOL_MC,
+        ):
+            return False, f"Takeoff rejected in state {self.state.name}"
+        if self.state == FlightState.LANDING:
+            return False, "Takeoff rejected while landing"
+        if self.state in (
+            FlightState.WARMUP_SETPOINTS,
+            FlightState.REQUEST_OFFBOARD_ARM,
+            FlightState.MC_TAKEOFF,
+        ):
+            return True, "Takeoff sequence already running"
+        if self.state == FlightState.MC_HOVER:
+            return True, "Vehicle already in MC hover"
+
+        if altitude_m is not None and altitude_m > 0.0:
+            self.takeoff_height_m = altitude_m
+            self.takeoff_z = -abs(self.takeoff_height_m)
+
+        self.warmup_counter = 0
+        self.pending_fw = False
+        self.pending_mc = False
+        self.pending_land = False
+        self.vtol_fw_sent = False
+        self.vtol_mc_sent = False
+        self.landing_sent = False
+        self._set_state(FlightState.WARMUP_SETPOINTS)
+
+        source_label = source if source else "request"
+        return True, f"Takeoff sequence started by {source_label}"
+
+    def _start_landing_sequence(self, source: str = "") -> tuple[bool, str]:
+        if self.state == FlightState.LANDING:
+            return True, "Landing already in progress"
+        if self.state == FlightState.IDLE:
+            return False, "Landing rejected in IDLE"
+
+        self.pending_land = True
+        source_label = source if source else "request"
+        return True, f"Landing sequence requested by {source_label}"
 
     # -----------------------------------------------------------------------
     # State transitions
@@ -451,7 +517,9 @@ class VtolStateMachine(Node):
         self.vtol_vehicle_status = msg
 
     def _land_cb(self, _: Empty) -> None:
-        self.pending_land = True
+        ok, message = self._start_landing_sequence(source="topic")
+        if not ok:
+            self.get_logger().warn(message)
 
     def _req_fw_cb(self, _: Empty) -> None:
         self.get_logger().warn("FW setpoint request received!")
@@ -846,6 +914,51 @@ class VtolStateMachine(Node):
         self.debug_pub.publish(msg)
         self.debug_seq += 1
 
+    def _takeoff_goal_cb(self, goal_request: FlightCommand.Goal) -> GoalResponse:
+        if goal_request.command in (
+            FlightCommand.Goal.TAKEOFF,
+            FlightCommand.Goal.LAND,
+        ):
+            return GoalResponse.ACCEPT
+        return GoalResponse.REJECT
+
+    def _takeoff_cancel_cb(self, _goal_handle) -> CancelResponse:
+        return CancelResponse.REJECT
+
+    def _execute_takeoff_goal(self, goal_handle) -> FlightCommand.Result:
+        req = goal_handle.request
+        result = FlightCommand.Result()
+
+        if req.command == FlightCommand.Goal.TAKEOFF:
+            requested_alt = req.takeoff_altitude if req.takeoff_altitude > 0.0 else None
+            ok, message = self._start_takeoff_sequence(
+                altitude_m=requested_alt,
+                source="action",
+            )
+        elif req.command == FlightCommand.Goal.LAND:
+            ok, message = self._start_landing_sequence(source="action")
+        else:
+            result.success = False
+            result.message = f"Unsupported command: {int(req.command)}"
+            result.final_state = int(self.state)
+            goal_handle.abort()
+            return result
+
+        feedback = FlightCommand.Feedback()
+        feedback.current_state = int(self.state)
+        feedback.phase = self.state.name
+        goal_handle.publish_feedback(feedback)
+
+        result.success = ok
+        result.message = message
+        result.final_state = int(self.state)
+
+        if ok:
+            goal_handle.succeed()
+        else:
+            goal_handle.abort()
+        return result
+
     # -----------------------------------------------------------------------
     # Main timer loop
     # -----------------------------------------------------------------------
@@ -862,6 +975,9 @@ class VtolStateMachine(Node):
         # Landing is highest priority
         if want_land and self.state != FlightState.LANDING:
             self._set_state(FlightState.LANDING)
+
+        if self.state == FlightState.IDLE:
+            return
 
         # ------------------------------------------------------------------
         # WARMUP: stream setpoints before arming so PX4 accepts offboard mode
@@ -1044,7 +1160,8 @@ class VtolStateMachine(Node):
             if not self.landing_sent:
                 self._cmd_land()
                 self.landing_sent = True
-            rclpy.shutdown()
+                self._set_state(FlightState.IDLE)
+            # rclpy.shutdown()
 
 
 # ---------------------------------------------------------------------------
